@@ -86,7 +86,7 @@ export function toUserProfile(row: SupabaseProfile): UserProfile {
   };
 }
 
-export type MessageType = 'text';
+export type MessageType = 'text' | 'voice';
 
 export type MessageReaction = {
   emoji: string;
@@ -105,11 +105,13 @@ export type Message = {
   senderId: string;
   type: MessageType;
   content: string;
+  mediaUrl?: string;
   replyTo?: { id: string; content: string; type: MessageType };
   reactions: MessageReaction[];
   status: 'sending' | 'sent' | 'delivered' | 'read';
   createdAt: string;
-  context?: InteractionContext; // For the first message if it was a reply to a prompt/photo
+  readAt?: string | null;
+  context?: InteractionContext;
 };
 
 export type Match = {

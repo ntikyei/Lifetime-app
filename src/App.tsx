@@ -8,8 +8,6 @@ import { Tab, Match, AppSettings, DiscoveryPreferences } from './types';
 import { supabase, supabaseConfigured } from './supabase';
 import Auth from './components/Auth';
 import ProfileSetup from './components/ProfileSetup';
-import Landing from './components/Landing';
-import Welcome from './components/Welcome';
 import Navigation from './components/Navigation';
 import Discovery from './components/Discovery';
 import Matches from './components/Matches';
@@ -21,7 +19,7 @@ import Likes from './components/Likes';
 import { AnimatePresence } from 'motion/react';
 import { Loader2 } from 'lucide-react';
 
-type AppState = 'loading' | 'auth' | 'profileSetup' | 'landing' | 'welcome' | 'main';
+type AppState = 'loading' | 'auth' | 'profileSetup' | 'main';
 
 const DEFAULT_SETTINGS: AppSettings = {
   discoveryPaused: false,
@@ -64,8 +62,6 @@ export default function App() {
       return;
     }
 
-    const CREATOR_EMAIL = 'joshbzy@gmail.com';
-
     const checkSession = async () => {
       const { data: { session } } = await supabase.auth.getSession();
 
@@ -76,26 +72,14 @@ export default function App() {
 
       setUserId(session.user.id);
 
-      // Creator bypass
-      if (session.user.email === CREATOR_EMAIL) {
-        await supabase
-          .from('profiles')
-          .update({ is_paid: true })
-          .eq('id', session.user.id);
-        setAppState('main');
-        return;
-      }
-
       const { data: profile } = await supabase
         .from('profiles')
-        .select('id, is_paid')
+        .select('id')
         .eq('id', session.user.id)
         .single();
 
       if (!profile) {
         setAppState('profileSetup');
-      } else if (!profile.is_paid) {
-        setAppState('landing');
       } else {
         setAppState('main');
       }
@@ -124,43 +108,14 @@ export default function App() {
   const handleAuthSuccess = (authUserId: string, hasProfile: boolean) => {
     setUserId(authUserId);
     if (hasProfile) {
-      // Check is_paid
-      supabase
-        .from('profiles')
-        .select('is_paid')
-        .eq('id', authUserId)
-        .single()
-        .then(({ data }) => {
-          if (data?.is_paid) {
-            setAppState('main');
-          } else {
-            setAppState('landing');
-          }
-        });
+      setAppState('main');
     } else {
       setAppState('profileSetup');
     }
   };
 
-  const CREATOR_EMAIL = 'ntikyeijosh06@gmail.com'; // your email
-
-  const handleProfileSetupComplete = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    
-    if (session?.user?.email === CREATOR_EMAIL) {
-      // bypass payment for creator
-      await supabase
-        .from('profiles')
-        .update({ is_paid: true })
-        .eq('id', session.user.id);
-      setAppState('main');
-    } else {
-      setAppState('landing');
-    }
-  };
-
-  const handlePay = () => {
-    setAppState('welcome');
+  const handleProfileSetupComplete = () => {
+    setAppState('main');
   };
 
   const handleLogout = async () => {
@@ -220,16 +175,6 @@ export default function App() {
   // Profile setup
   if (appState === 'profileSetup' && userId) {
     return <ProfileSetup userId={userId} onComplete={handleProfileSetupComplete} />;
-  }
-
-  // Paywall
-  if (appState === 'landing') {
-    return <Landing onPay={handlePay} userId={userId} />;
-  }
-
-  // Post-payment welcome
-  if (appState === 'welcome') {
-    return <Welcome onContinue={() => setAppState('main')} />;
   }
 
   return (
