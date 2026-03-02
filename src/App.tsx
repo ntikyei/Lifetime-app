@@ -20,6 +20,7 @@ import PreferencesView from './components/Preferences';
 import Likes from './components/Likes';
 import { AnimatePresence } from 'motion/react';
 import { Loader2 } from 'lucide-react';
+import { Analytics } from '@vercel/analytics/react';
 
 type AppState = 'loading' | 'auth' | 'profileSetup' | 'landing' | 'welcome' | 'main';
 
@@ -287,6 +288,7 @@ export default function App() {
           />
         )}
       </AnimatePresence>
+      <Analytics />
     </div>
   );
 }
