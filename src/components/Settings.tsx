@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { ChevronLeft, LogOut, Shield, Bell, EyeOff, MapPinOff, RefreshCcw, Trash2, FileText, HelpCircle, Check, X } from 'lucide-react';
+import { ChevronLeft, LogOut, Shield, Bell, EyeOff, MapPinOff, RefreshCcw, Trash2, FileText, HelpCircle, Check, X, Loader2, AlertTriangle } from 'lucide-react';
 import { AppSettings } from '../types';
+import { supabase } from '../supabase';
 
 interface Props {
   onClose: () => void;
@@ -11,6 +12,33 @@ interface Props {
 
 export default function SettingsView({ onClose, settings, onUpdate, onLogout }: Props) {
   const [localSettings, setLocalSettings] = useState<AppSettings>(settings);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const handleDeleteAccount = async () => {
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+
+      // Delete profile (cascades should handle related data)
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .delete()
+        .eq('id', user.id);
+      if (profileError) throw new Error(profileError.message);
+
+      // Sign out
+      await supabase.auth.signOut();
+      onLogout();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to delete account.';
+      setDeleteError(message);
+      setDeleting(false);
+    }
+  };
 
   const toggleSetting = (key: keyof AppSettings) => {
     const newSettings = { ...localSettings, [key]: !localSettings[key] };
@@ -176,12 +204,53 @@ export default function SettingsView({ onClose, settings, onUpdate, onLogout }: 
             <LogOut className="w-5 h-5" />
             Log Out
           </button>
-          <button className="w-full flex items-center justify-center gap-2 p-4 rounded-xl border border-[#ef4444]/20 bg-[#ef4444]/10 hover:bg-[#ef4444]/20 transition-colors text-[#ef4444] font-medium">
+          <button
+            onClick={() => setShowDeleteConfirm(true)}
+            className="w-full flex items-center justify-center gap-2 p-4 rounded-xl border border-[#ef4444]/20 bg-[#ef4444]/10 hover:bg-[#ef4444]/20 transition-colors text-[#ef4444] font-medium"
+          >
             <Trash2 className="w-5 h-5" />
             Delete Account
           </button>
         </section>
       </div>
+
+      {/* Delete Account Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-[60] bg-black/70 flex items-center justify-center p-6">
+          <div className="w-full max-w-sm bg-[#171717] border border-[#262626] rounded-2xl p-6 text-center">
+            <div className="w-12 h-12 rounded-full bg-[#ef4444]/10 flex items-center justify-center mx-auto mb-4">
+              <AlertTriangle className="w-6 h-6 text-[#ef4444]" />
+            </div>
+            <h3 className="text-lg font-serif text-[#f5f5f5] mb-2">Delete your account?</h3>
+            <p className="text-sm text-[#a3a3a3] font-light mb-6 leading-relaxed">
+              This will permanently delete your profile, matches, and messages. This action cannot be undone.
+            </p>
+            {deleteError && (
+              <p className="text-sm text-[#ef4444] mb-4">{deleteError}</p>
+            )}
+            <div className="space-y-3">
+              <button
+                onClick={handleDeleteAccount}
+                disabled={deleting}
+                className="w-full py-3 rounded-full bg-[#ef4444] text-white font-medium text-sm hover:bg-[#dc2626] transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {deleting ? (
+                  <><Loader2 className="w-4 h-4 animate-spin" /> Deleting...</>
+                ) : (
+                  'Yes, delete my account'
+                )}
+              </button>
+              <button
+                onClick={() => { setShowDeleteConfirm(false); setDeleteError(null); }}
+                disabled={deleting}
+                className="w-full py-3 rounded-full border border-[#262626] text-[#a3a3a3] font-medium text-sm hover:text-[#f5f5f5] hover:border-[#404040] transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

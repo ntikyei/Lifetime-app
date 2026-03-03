@@ -374,9 +374,39 @@ export default function Chat({ match, onBack, settings, currentUserId }: Props) 
           </div>
         ) : (
           <>
-            <div className="text-center py-6">
-              <p className="text-xs text-[#737373] font-light uppercase tracking-widest">Start of conversation</p>
-            </div>
+            {messages.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full text-center px-6">
+                <div className="w-20 h-20 rounded-full overflow-hidden mb-4 border border-[#262626]">
+                  <img
+                    src={match.user.photos[0]?.url ?? ''}
+                    alt={match.user.name}
+                    className="w-full h-full object-cover"
+                    referrerPolicy="no-referrer"
+                  />
+                </div>
+                <p className="text-lg font-serif text-[#f5f5f5] mb-2">You matched with {match.user.name}</p>
+                <p className="text-sm text-[#737373] font-light mb-6">Say something thoughtful to start the conversation.</p>
+                <div className="flex flex-wrap justify-center gap-2">
+                  {[
+                    `What's something you're passionate about?`,
+                    `Hi ${match.user.name}! What's your favourite way to spend a weekend?`,
+                    `I'd love to hear more about you 😊`,
+                  ].map((starter) => (
+                    <button
+                      key={starter}
+                      onClick={() => setInputText(starter)}
+                      className="px-3 py-2 rounded-full border border-[#262626] text-xs text-[#a3a3a3] hover:text-[#f5f5f5] hover:border-[#404040] transition-colors"
+                    >
+                      {starter}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="text-center py-6">
+                  <p className="text-xs text-[#737373] font-light uppercase tracking-widest">Start of conversation</p>
+                </div>
 
             {messages.map((msg, idx) => {
               const isMe = msg.senderId === currentUserId;
@@ -463,6 +493,8 @@ export default function Chat({ match, onBack, settings, currentUserId }: Props) 
               );
             })}
             <div ref={messagesEndRef} />
+              </>
+            )}
           </>
         )}
       </div>

@@ -8,6 +8,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Settings, Shield, LogOut, RefreshCcw, PenLine, Loader2, X, Camera, Check, Trash2 } from 'lucide-react';
 import { DiscoveryPreferences, SupabaseProfile, toUserProfile, UserProfile } from '../types';
 import { supabase } from '../supabase';
+import { calculateAge } from '../utils/helpers';
 
 interface Props {
   onOpenSettings: () => void;
@@ -137,14 +138,32 @@ function PromptEditModal({ question, answer, onSave, onClose }: PromptEditModalP
   );
 }
 
-function calculateCompletion(profile: UserProfile): number {
-  let score = 0;
-  if (profile.name) score += 20;
-  if (profile.photos.length > 0) score += 20;
-  if (profile.bio) score += 20;
-  if (profile.prompts.length > 0) score += 20;
-  if (profile.job || profile.location) score += 20;
-  return score;
+interface CompletionCheck {
+  done: boolean;
+  weight: number;
+  label: string;
+  icon: string;
+  action: string;
+}
+
+function getCompletionChecks(raw: SupabaseProfile | null): CompletionCheck[] {
+  if (!raw) return [];
+  return [
+    { done: !!raw.display_name?.trim(), weight: 15, label: 'Add your name', icon: '✏️', action: 'name' },
+    { done: !!raw.dob, weight: 10, label: 'Add your date of birth', icon: '🎂', action: 'dob' },
+    { done: !!raw.gender?.trim(), weight: 10, label: 'Add your gender', icon: '👤', action: 'gender' },
+    { done: Array.isArray(raw.photos) && raw.photos.length >= 1, weight: 20, label: 'Add at least 1 photo', icon: '📸', action: 'photo' },
+    { done: Array.isArray(raw.photos) && raw.photos.length >= 3, weight: 10, label: 'Add 3 or more photos', icon: '📸', action: 'photo' },
+    { done: !!raw.bio?.trim(), weight: 15, label: 'Write a bio', icon: '✍️', action: 'bio' },
+    { done: Array.isArray(raw.prompts) && raw.prompts.length >= 1, weight: 10, label: 'Answer a prompt', icon: '💬', action: 'prompt' },
+    { done: !!raw.job_title?.trim(), weight: 5, label: 'Add your job title', icon: '💼', action: 'job' },
+    { done: !!raw.location_city?.trim(), weight: 5, label: 'Add your city', icon: '📍', action: 'location' },
+  ];
+}
+
+function calculateCompletion(raw: SupabaseProfile | null): number {
+  const checks = getCompletionChecks(raw);
+  return checks.reduce((sum, c) => sum + (c.done ? c.weight : 0), 0);
 }
 
 export default function Profile({ onOpenSettings, preferences, currentUserId, onLogout }: Props) {
@@ -155,6 +174,8 @@ export default function Profile({ onOpenSettings, preferences, currentUserId, on
   const [saving, setSaving] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [photos, setPhotos] = useState<string[]>([]);
+  const [showSavedToast, setShowSavedToast] = useState(false);
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Edit modal state
   const [editField, setEditField] = useState<{ field: string; title: string; value: string; maxLength?: number; multiline?: boolean } | null>(null);
@@ -199,6 +220,9 @@ export default function Profile({ onOpenSettings, preferences, currentUserId, on
       console.error('[Profile] Update failed:', err);
     } else {
       console.log(`[Profile] Updated ${field}`);
+      setShowSavedToast(true);
+      if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+      savedTimerRef.current = setTimeout(() => setShowSavedToast(false), 2000);
       await fetchProfile();
     }
     setSaving(false);
@@ -212,6 +236,8 @@ export default function Profile({ onOpenSettings, preferences, currentUserId, on
       location: 'location_city',
       job: 'job_title',
       bio: 'bio',
+      gender: 'gender',
+      dob: 'dob',
     };
     const dbField = fieldMap[editField.field] ?? editField.field;
     updateField(dbField, val);
@@ -348,7 +374,9 @@ export default function Profile({ onOpenSettings, preferences, currentUserId, on
     );
   }
 
-  const profileCompletion = calculateCompletion(profile);
+  const profileCompletion = calculateCompletion(rawProfile);
+  const completionChecks = getCompletionChecks(rawProfile);
+  const missingItems = completionChecks.filter(c => !c.done);
 
   return (
     <div className="h-full bg-[#0a0a0a] p-6 overflow-y-auto">
@@ -356,6 +384,13 @@ export default function Profile({ onOpenSettings, preferences, currentUserId, on
         <div className="fixed top-4 right-4 z-50 bg-[#171717] border border-[#262626] rounded-full px-4 py-2 flex items-center gap-2 shadow-lg">
           <Loader2 className="w-4 h-4 animate-spin text-[#f5f5f5]" />
           <span className="text-xs text-[#a3a3a3]">{uploadingPhoto ? 'Uploading photo...' : 'Saving...'}</span>
+        </div>
+      )}
+
+      {showSavedToast && !saving && (
+        <div className="fixed top-4 right-4 z-50 bg-[#171717] border border-emerald-500/30 rounded-full px-4 py-2 flex items-center gap-2 shadow-lg">
+          <Check className="w-4 h-4 text-emerald-400" />
+          <span className="text-xs text-emerald-400 font-medium">Saved</span>
         </div>
       )}
 
@@ -420,22 +455,45 @@ export default function Profile({ onOpenSettings, preferences, currentUserId, on
             <div className="flex justify-between items-end mb-3">
               <div>
                 <h3 className="text-[#f5f5f5] font-medium mb-1">Profile {profileCompletion}% complete</h3>
-                <p className="text-xs text-[#a3a3a3] font-light">Complete profiles get 3x more matches.</p>
+                <p className="text-xs text-[#a3a3a3] font-light">
+                  {profileCompletion === 100 ? 'Your profile is complete! You\'re 3x more likely to get matches.' : 'Complete profiles get 3x more matches.'}
+                </p>
               </div>
               <span className="text-2xl font-serif text-[#737373]">{profileCompletion}%</span>
             </div>
             <div className="w-full h-1.5 bg-[#262626] rounded-full overflow-hidden mb-4">
               <div
-                className="h-full bg-[#f5f5f5] rounded-full transition-all duration-1000 ease-out"
+                className={`h-full rounded-full transition-all duration-1000 ease-out ${profileCompletion === 100 ? 'bg-emerald-400' : 'bg-[#f5f5f5]'}`}
                 style={{ width: `${profileCompletion}%` }}
               />
             </div>
-            <button
-              onClick={() => setShowAddPrompt(true)}
-              className="w-full py-2.5 bg-[#262626] hover:bg-[#404040] text-[#f5f5f5] text-sm font-medium rounded-xl transition-colors"
-            >
-              Add a prompt
-            </button>
+            {profileCompletion === 100 ? (
+              <div className="text-center py-2">
+                <span className="text-emerald-400 text-sm font-medium">🎉 Looking great!</span>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {missingItems.slice(0, 3).map((item) => (
+                  <button
+                    key={item.label}
+                    onClick={() => {
+                      if (item.action === 'bio') setEditField({ field: 'bio', title: 'Edit Bio', value: profile.bio, maxLength: 300, multiline: true });
+                      else if (item.action === 'name') setEditField({ field: 'name', title: 'Edit Name', value: profile.name, maxLength: 50 });
+                      else if (item.action === 'job') setEditField({ field: 'job', title: 'Edit Job Title', value: profile.job, maxLength: 100 });
+                      else if (item.action === 'location') setEditField({ field: 'location', title: 'Edit City', value: profile.location, maxLength: 100 });
+                      else if (item.action === 'prompt') setShowAddPrompt(true);
+                      else if (item.action === 'photo') fileInputRef.current?.click();
+                      else if (item.action === 'gender') setEditField({ field: 'gender', title: 'Edit Gender', value: rawProfile?.gender ?? '', maxLength: 30 });
+                      else if (item.action === 'dob') setEditField({ field: 'dob', title: 'Edit Date of Birth', value: rawProfile?.dob ?? '' });
+                    }}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 bg-[#0a0a0a] border border-[#262626] rounded-xl hover:border-[#404040] transition-colors text-left"
+                  >
+                    <span className="text-sm">{item.icon}</span>
+                    <span className="text-sm text-[#a3a3a3] font-light">{item.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </section>
 

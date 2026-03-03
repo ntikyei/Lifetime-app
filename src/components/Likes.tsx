@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Heart, X, MessageCircle, Loader2 } from 'lucide-react';
 import { Match, SupabaseProfile, toUserProfile, UserProfile } from '../types';
 import { supabase } from '../supabase';
+import { timeAgo } from '../utils/helpers';
 
 interface Props {
   onMatch: (match: Match) => void;
@@ -14,16 +15,6 @@ interface IncomingLike {
   user: UserProfile;
   userId: string;      // Supabase user id of the person who liked
   createdAt: string;
-}
-
-function timeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  return `${days}d ago`;
 }
 
 export default function Likes({ onMatch, currentUserId }: Props) {

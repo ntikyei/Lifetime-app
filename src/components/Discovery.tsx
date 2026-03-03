@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Heart, X, Infinity, Coffee, MoreHorizontal, Sparkles, Send, Loader2 } from 'lucide-react';
 import { supabase } from '../supabase';
 import { DiscoveryPreferences, InteractionContext, UserProfile, SupabaseProfile, toUserProfile } from '../types';
+import { calculateAge } from '../utils/helpers';
 
 interface Props {
   onOpenPreferences: () => void;
@@ -51,14 +52,33 @@ export default function Discovery({ onOpenPreferences, preferences, isPaused, cu
       }
 
       const userProfiles = (data as SupabaseProfile[]).map(toUserProfile);
-      setProfiles(userProfiles);
+
+      // Apply preference filters
+      const filtered = userProfiles.filter((p) => {
+        // Filter by age range
+        if (p.age < preferences.ageRange[0] || p.age > preferences.ageRange[1]) {
+          return false;
+        }
+        // Filter by gender (if genders array is not empty)
+        if (preferences.genders.length > 0) {
+          // Match against the raw profile gender field
+          const rawMatch = (data as SupabaseProfile[]).find(r => r.id === p.id);
+          if (rawMatch && rawMatch.gender && !preferences.genders.some(g => g.toLowerCase() === rawMatch.gender.toLowerCase())) {
+            return false;
+          }
+        }
+        return true;
+      });
+
+      console.log(`[Discovery] ${userProfiles.length} profiles fetched, ${filtered.length} match preferences`);
+      setProfiles(filtered);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load profiles.';
       setFetchError(message);
     } finally {
       setLoading(false);
     }
-  }, [currentUserId]);
+  }, [currentUserId, preferences]);
 
   useEffect(() => {
     fetchProfiles();
@@ -232,8 +252,14 @@ export default function Discovery({ onOpenPreferences, preferences, isPaused, cu
         </div>
         <h2 className="text-2xl font-serif text-[#f5f5f5] mb-4">You're all caught up.</h2>
         <p className="leading-relaxed mb-6">
-          You've seen all active profiles matching your preferences right now. We'll notify you when new people join.
+          No profiles match your current preferences right now. Try adjusting your filters or check back later.
         </p>
+        <button 
+          onClick={onOpenPreferences}
+          className="bg-[#f5f5f5] text-[#0a0a0a] font-medium rounded-full py-3 px-6 hover:bg-[#e5e5e5] transition-colors mb-4"
+        >
+          Adjust preferences
+        </button>
         <div className="bg-[#171717] border border-[#262626] rounded-xl p-4 text-sm text-[#737373]">
           We don't show you inactive profiles or fake accounts just to keep you swiping. Go enjoy your day.
         </div>

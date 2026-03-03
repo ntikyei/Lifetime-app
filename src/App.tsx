@@ -229,6 +229,7 @@ export default function App() {
             onClose={() => setShowPreferences(false)} 
             preferences={preferences}
             onUpdate={setPreferences}
+            currentUserId={userId ?? ''}
           />
         )}
       </AnimatePresence>

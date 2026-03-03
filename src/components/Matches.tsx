@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
 import { Match, SupabaseProfile, toUserProfile } from '../types';
-import { MessageCircleHeart, Loader2 } from 'lucide-react';
+import { MessageCircleHeart, Loader2, RefreshCw } from 'lucide-react';
+import { timeAgo } from '../utils/helpers';
 
 interface Props {
   onSelectMatch: (match: Match) => void;
@@ -15,79 +16,97 @@ interface MatchRow {
   created_at: string;
 }
 
+interface MatchWithMeta extends Match {
+  matchedAt: string;
+  lastMessageAt: string | null;
+  isNew: boolean;
+}
+
 export default function Matches({ onSelectMatch, currentUserId }: Props) {
-  const [matches, setMatches] = useState<Match[]>([]);
+  const [matches, setMatches] = useState<MatchWithMeta[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchMatches = async () => {
-      setLoading(true);
-      setError(null);
+  const fetchMatches = async () => {
+    setLoading(true);
+    setError(null);
 
-      try {
-        // Fetch matches where current user is user_a or user_b
-        const { data: matchRows, error: matchError } = await supabase
-          .from('matches')
-          .select('*')
-          .or(`user_a.eq.${currentUserId},user_b.eq.${currentUserId}`);
+    try {
+      const { data: matchRows, error: matchError } = await supabase
+        .from('matches')
+        .select('*')
+        .or(`user_a.eq.${currentUserId},user_b.eq.${currentUserId}`);
 
-        if (matchError) throw new Error(matchError.message);
-        if (!matchRows || matchRows.length === 0) {
-          setMatches([]);
-          setLoading(false);
-          return;
-        }
-
-        // Get the other person's IDs
-        const typedRows = matchRows as MatchRow[];
-        const otherUserIds = typedRows.map((m) =>
-          m.user_a === currentUserId ? m.user_b : m.user_a
-        );
-
-        // Fetch their profiles
-        const { data: profiles, error: profileError } = await supabase
-          .from('profiles')
-          .select('*')
-          .in('id', otherUserIds);
-
-        if (profileError) throw new Error(profileError.message);
-
-        const profileMap = new Map(
-          (profiles as SupabaseProfile[]).map((p) => [p.id, toUserProfile(p)])
-        );
-
-        // Fetch the last message for each match
-        const matchList: Match[] = [];
-        for (const row of typedRows) {
-          const otherId = row.user_a === currentUserId ? row.user_b : row.user_a;
-          const profile = profileMap.get(otherId);
-          if (!profile) continue;
-
-          const { data: lastMsg } = await supabase
-            .from('messages')
-            .select('body, sender_id, created_at')
-            .eq('match_id', row.id)
-            .order('created_at', { ascending: false })
-            .limit(1);
-
-          matchList.push({
-            id: row.id,
-            user: profile,
-            lastMessage: lastMsg && lastMsg.length > 0 ? (lastMsg[0].body as string) : 'Start chatting!',
-            unread: false, // Could be enhanced with read receipts
-          });
-        }
-
-        setMatches(matchList);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to load matches.';
-        setError(message);
-      } finally {
+      if (matchError) throw new Error(matchError.message);
+      if (!matchRows || matchRows.length === 0) {
+        setMatches([]);
         setLoading(false);
+        return;
       }
-    };
 
+      const typedRows = matchRows as MatchRow[];
+      const otherUserIds = typedRows.map((m) =>
+        m.user_a === currentUserId ? m.user_b : m.user_a
+      );
+
+      const { data: profiles, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .in('id', otherUserIds);
+
+      if (profileError) throw new Error(profileError.message);
+
+      const profileMap = new Map(
+        (profiles as SupabaseProfile[]).map((p) => [p.id, toUserProfile(p)])
+      );
+
+      const now = Date.now();
+      const matchList: MatchWithMeta[] = [];
+      for (const row of typedRows) {
+        const otherId = row.user_a === currentUserId ? row.user_b : row.user_a;
+        const profile = profileMap.get(otherId);
+        if (!profile) continue;
+
+        const { data: lastMsg } = await supabase
+          .from('messages')
+          .select('body, sender_id, created_at')
+          .eq('match_id', row.id)
+          .order('created_at', { ascending: false })
+          .limit(1);
+
+        const lastMsgTime = lastMsg && lastMsg.length > 0 ? lastMsg[0].created_at as string : null;
+        const matchAge = now - new Date(row.created_at).getTime();
+        const isNew = matchAge < 86400000; // less than 24 hours
+
+        matchList.push({
+          id: row.id,
+          user: profile,
+          lastMessage: lastMsg && lastMsg.length > 0 ? (lastMsg[0].body as string) : 'Say hello! 👋',
+          unread: false,
+          matchedAt: row.created_at,
+          lastMessageAt: lastMsgTime,
+          isNew,
+        });
+      }
+
+      // Sort by most recent message first, then by match date
+      matchList.sort((a, b) => {
+        const aTime = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : new Date(a.matchedAt).getTime();
+        const bTime = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : new Date(b.matchedAt).getTime();
+        return bTime - aTime;
+      });
+
+      console.log(`[Matches] Loaded ${matchList.length} matches`);
+      setMatches(matchList);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to load matches.';
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchMatches();
   }, [currentUserId]);
 
@@ -123,7 +142,12 @@ export default function Matches({ onSelectMatch, currentUserId }: Props) {
 
   return (
     <div className="h-full bg-[#0a0a0a] p-6 overflow-y-auto">
-      <h1 className="text-3xl font-serif text-[#f5f5f5] mb-8">Connections</h1>
+      <div className="flex items-center justify-between mb-8">
+        <h1 className="text-3xl font-serif text-[#f5f5f5]">Connections</h1>
+        <button onClick={fetchMatches} className="p-2 text-[#737373] hover:text-[#f5f5f5] transition-colors">
+          <RefreshCw className="w-5 h-5" />
+        </button>
+      </div>
       
       <div className="space-y-6">
         {matches.map((match) => (
@@ -139,18 +163,23 @@ export default function Matches({ onSelectMatch, currentUserId }: Props) {
                 className="w-full h-full object-cover rounded-full"
                 referrerPolicy="no-referrer"
               />
-              {match.unread && (
-                <div className="absolute top-0 right-0 w-3 h-3 bg-[#f5f5f5] border-2 border-[#0a0a0a] rounded-full" />
+              {match.isNew && (
+                <div className="absolute -top-1 -right-1 px-1.5 py-0.5 bg-[#f5f5f5] rounded-full">
+                  <span className="text-[9px] font-semibold text-[#0a0a0a]">NEW</span>
+                </div>
               )}
             </div>
             
             <div className="flex-1 min-w-0 border-b border-[#171717] pb-4 group-hover:border-[#262626] transition-colors">
               <div className="flex justify-between items-baseline mb-1">
-                <h3 className={`text-base font-medium truncate ${match.unread ? 'text-[#f5f5f5]' : 'text-[#d4d4d4]'}`}>
+                <h3 className="text-base font-medium truncate text-[#d4d4d4]">
                   {match.user.name}
                 </h3>
+                <span className="text-xs text-[#737373] font-light shrink-0 ml-2">
+                  {timeAgo(match.lastMessageAt ?? match.matchedAt)}
+                </span>
               </div>
-              <p className={`text-sm truncate font-light ${match.unread ? 'text-[#e5e5e5]' : 'text-[#737373]'}`}>
+              <p className="text-sm truncate font-light text-[#737373]">
                 {match.lastMessage}
               </p>
             </div>
