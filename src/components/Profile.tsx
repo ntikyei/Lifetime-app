@@ -24,9 +24,10 @@ interface EditModalProps {
   onSave: (val: string) => void;
   onClose: () => void;
   multiline?: boolean;
+  inputType?: string;
 }
 
-function EditModal({ title, value, maxLength, onSave, onClose, multiline }: EditModalProps) {
+function EditModal({ title, value, maxLength, onSave, onClose, multiline, inputType }: EditModalProps) {
   const [text, setText] = useState(value);
 
   return (
@@ -49,7 +50,7 @@ function EditModal({ title, value, maxLength, onSave, onClose, multiline }: Edit
           />
         ) : (
           <input
-            type="text"
+            type={inputType || 'text'}
             value={text}
             onChange={(e) => setText(e.target.value)}
             maxLength={maxLength}
@@ -178,7 +179,7 @@ export default function Profile({ onOpenSettings, preferences, currentUserId, on
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Edit modal state
-  const [editField, setEditField] = useState<{ field: string; title: string; value: string; maxLength?: number; multiline?: boolean } | null>(null);
+  const [editField, setEditField] = useState<{ field: string; title: string; value: string; maxLength?: number; multiline?: boolean; inputType?: string } | null>(null);
   const [editingPromptIndex, setEditingPromptIndex] = useState<number | null>(null);
   const [showAddPrompt, setShowAddPrompt] = useState(false);
 
@@ -462,6 +463,13 @@ export default function Profile({ onOpenSettings, preferences, currentUserId, on
           >
             <PenLine size={14} />
           </button>
+          <button
+            onClick={() => setEditField({ field: 'dob', title: 'Edit Date of Birth', value: rawProfile?.dob ?? '', inputType: 'date' })}
+            className="text-[#737373] hover:text-[#f5f5f5] transition-colors"
+            title="Edit age"
+          >
+            <PenLine size={12} />
+          </button>
         </div>
         <div className="flex items-center gap-2">
           <p className="text-[#737373] font-light">{profile.location || 'No location set'}</p>
@@ -512,7 +520,7 @@ export default function Profile({ onOpenSettings, preferences, currentUserId, on
                       else if (item.action === 'prompt') setShowAddPrompt(true);
                       else if (item.action === 'photo') fileInputRef.current?.click();
                       else if (item.action === 'gender') setEditField({ field: 'gender', title: 'Edit Gender', value: rawProfile?.gender ?? '', maxLength: 30 });
-                      else if (item.action === 'dob') setEditField({ field: 'dob', title: 'Edit Date of Birth', value: rawProfile?.dob ?? '' });
+                      else if (item.action === 'dob') setEditField({ field: 'dob', title: 'Edit Date of Birth', value: rawProfile?.dob ?? '', inputType: 'date' });
                     }}
                     className="w-full flex items-center gap-3 px-4 py-2.5 bg-[#0a0a0a] border border-[#262626] rounded-xl hover:border-[#404040] transition-colors text-left"
                   >
@@ -719,6 +727,7 @@ export default function Profile({ onOpenSettings, preferences, currentUserId, on
           value={editField.value}
           maxLength={editField.maxLength}
           multiline={editField.multiline}
+          inputType={editField.inputType}
           onClose={() => setEditField(null)}
           onSave={handleFieldSave}
         />
