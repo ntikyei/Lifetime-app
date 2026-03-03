@@ -1,3 +1,9 @@
+// If photo upload fails with RLS error, run this in Supabase SQL Editor:
+// create policy "Allow profile photo uploads"
+// on storage.objects for insert
+// to authenticated
+// with check (bucket_id = 'photos');
+
 import { useState, useEffect, useRef } from 'react';
 import { Settings, Shield, LogOut, RefreshCcw, PenLine, Loader2, X, Camera, Check, Trash2 } from 'lucide-react';
 import { DiscoveryPreferences, SupabaseProfile, toUserProfile, UserProfile } from '../types';
@@ -147,6 +153,7 @@ export default function Profile({ onOpenSettings, preferences, currentUserId, on
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
   // Edit modal state
   const [editField, setEditField] = useState<{ field: string; title: string; value: string; maxLength?: number; multiline?: boolean } | null>(null);
@@ -230,47 +237,70 @@ export default function Profile({ onOpenSettings, preferences, currentUserId, on
   };
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !rawProfile) return;
-    setSaving(true);
-
-    const ext = file.name.split('.').pop() ?? 'png';
-    const filePath = `${currentUserId}/${Date.now()}.${ext}`;
-    const { error: uploadError } = await supabase.storage.from('profile-photos').upload(filePath, file);
-    if (uploadError) {
-      console.error('[Profile] Photo upload failed:', uploadError);
-      setSaving(false);
-      return;
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    
+    setUploadingPhoto(true);
+    
+    try {
+      const file = files[0];
+      const fileExt = file.name.split('.').pop();
+      const filePath = `${currentUserId}/${Date.now()}.${fileExt}`;
+      
+      // Upload to Supabase storage
+      const { error: uploadError } = await supabase.storage
+        .from('photos')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: false
+        });
+        
+      if (uploadError) throw uploadError;
+      
+      // Get public URL
+      const { data: urlData } = supabase.storage
+        .from('photos')
+        .getPublicUrl(filePath);
+        
+      const newUrl = urlData.publicUrl;
+      
+      // Update photos array in profiles table
+      const updatedPhotos = [...(profile?.photos ?? []), newUrl];
+      
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ photos: updatedPhotos })
+        .eq('id', currentUserId);
+        
+      if (updateError) throw updateError;
+      
+      // Update local state
+      setProfile(prev => prev ? { ...prev, photos: updatedPhotos } : prev);
+      
+    } catch (err) {
+      console.error('Photo upload error:', err);
+      setError('Failed to upload photo. Please try again.');
+    } finally {
+      setUploadingPhoto(false);
     }
-
-    const { data: urlData } = supabase.storage.from('profile-photos').getPublicUrl(filePath);
-    const photos = [...(rawProfile.photos ?? []), urlData.publicUrl];
-
-    const { error: err } = await supabase
-      .from('profiles')
-      .update({ photos })
-      .eq('id', currentUserId);
-
-    if (err) console.error('[Profile] Photos update failed:', err);
-    else console.log('[Profile] Photo added');
-    await fetchProfile();
-    setSaving(false);
-    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handlePhotoRemove = async (photoIndex: number) => {
-    if (!rawProfile) return;
-    setSaving(true);
-    const photos = rawProfile.photos.filter((_, i) => i !== photoIndex);
-    const { error: err } = await supabase
-      .from('profiles')
-      .update({ photos })
-      .eq('id', currentUserId);
-
-    if (err) console.error('[Profile] Photo remove failed:', err);
-    else console.log('[Profile] Photo removed');
-    await fetchProfile();
-    setSaving(false);
+  const handleRemovePhoto = async (photoUrl: string) => {
+    try {
+      const updatedPhotos = (profile?.photos ?? []).filter(p => p !== photoUrl);
+      
+      const { error } = await supabase
+        .from('profiles')
+        .update({ photos: updatedPhotos })
+        .eq('id', currentUserId);
+        
+      if (error) throw error;
+      
+      setProfile(prev => prev ? { ...prev, photos: updatedPhotos } : prev);
+      
+    } catch (err) {
+      console.error('Remove photo error:', err);
+    }
   };
 
   if (loading) {
@@ -294,10 +324,19 @@ export default function Profile({ onOpenSettings, preferences, currentUserId, on
 
   return (
     <div className="h-full bg-[#0a0a0a] p-6 overflow-y-auto">
-      {saving && (
+      {(saving || uploadingPhoto) && (
         <div className="fixed top-4 right-4 z-50 bg-[#171717] border border-[#262626] rounded-full px-4 py-2 flex items-center gap-2 shadow-lg">
           <Loader2 className="w-4 h-4 animate-spin text-[#f5f5f5]" />
-          <span className="text-xs text-[#a3a3a3]">Saving...</span>
+          <span className="text-xs text-[#a3a3a3]">{uploadingPhoto ? 'Uploading photo...' : 'Saving...'}</span>
+        </div>
+      )}
+
+      {error && (
+        <div className="fixed top-4 left-4 right-4 z-50 bg-[#171717] border border-[#ef4444]/30 rounded-xl px-4 py-3 flex items-center justify-between shadow-lg">
+          <span className="text-sm text-[#ef4444] font-light">{error}</span>
+          <button onClick={() => setError(null)} className="text-[#737373] hover:text-[#f5f5f5] ml-2">
+            <X size={16} />
+          </button>
         </div>
       )}
 
@@ -376,23 +415,27 @@ export default function Profile({ onOpenSettings, preferences, currentUserId, on
         <section>
           <h3 className="text-xs font-medium text-[#737373] uppercase tracking-widest mb-4">Photos</h3>
           <div className="grid grid-cols-3 gap-2">
-            {profile.photos.map((photo, i) => (
-              <div key={photo.id} className="aspect-square rounded-xl overflow-hidden relative group">
-                <img src={photo.url} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                <button
-                  onClick={() => handlePhotoRemove(i)}
-                  className="absolute top-2 right-2 w-7 h-7 rounded-full bg-[#0a0a0a]/70 flex items-center justify-center text-[#f5f5f5] opacity-0 group-hover:opacity-100 transition-opacity hover:bg-[#ef4444]"
-                >
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            ))}
-            {profile.photos.length < 6 && (
+            {(Array.isArray(profile.photos) ? profile.photos : []).map((photo, i) => {
+              const url = typeof photo === 'string' ? photo : photo.url;
+              return (
+                <div key={url + i} className="aspect-square rounded-xl overflow-hidden relative group">
+                  <img src={url} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  <button
+                    onClick={() => handleRemovePhoto(url)}
+                    className="absolute top-2 right-2 w-7 h-7 rounded-full bg-[#0a0a0a]/70 flex items-center justify-center text-[#f5f5f5] opacity-0 group-hover:opacity-100 transition-opacity hover:bg-[#ef4444]"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              );
+            })}
+            {(Array.isArray(profile.photos) ? profile.photos : []).length < 6 && (
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="aspect-square rounded-xl border-2 border-dashed border-[#262626] flex items-center justify-center text-[#737373] hover:border-[#404040] hover:text-[#a3a3a3] transition-colors"
+                disabled={uploadingPhoto}
+                className="aspect-square rounded-xl border-2 border-dashed border-[#262626] flex items-center justify-center text-[#737373] hover:border-[#404040] hover:text-[#a3a3a3] transition-colors disabled:opacity-50"
               >
-                <Camera size={24} />
+                {uploadingPhoto ? <Loader2 size={24} className="animate-spin" /> : <Camera size={24} />}
               </button>
             )}
           </div>
