@@ -58,6 +58,17 @@ export default function Auth({ onAuthSuccess }: Props) {
 
     try {
       if (mode === 'signup') {
+        // Prototype limit: 50 users max
+        const { count, error: countError } = await supabase
+          .from('profiles')
+          .select('id', { count: 'exact', head: true });
+
+        if (!countError && count !== null && count >= 50) {
+          setError('Lifetime is currently invite-only. We've reached our 50-user prototype limit — check back soon!');
+          setLoading(false);
+          return;
+        }
+
         const { data, error: signUpError } = await supabase.auth.signUp({
           email,
           password,
