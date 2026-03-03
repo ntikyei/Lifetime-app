@@ -62,6 +62,16 @@ export default function App() {
       return;
     }
 
+    const resolveProfileState = async (id: string) => {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('id', id)
+        .single();
+
+      setAppState(profile ? 'main' : 'profileSetup');
+    };
+
     const checkSession = async () => {
       const { data: { session } } = await supabase.auth.getSession();
 
@@ -71,18 +81,7 @@ export default function App() {
       }
 
       setUserId(session.user.id);
-
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('id', session.user.id)
-        .single();
-
-      if (!profile) {
-        setAppState('profileSetup');
-      } else {
-        setAppState('main');
-      }
+      await resolveProfileState(session.user.id);
     };
 
     checkSession();
@@ -95,8 +94,9 @@ export default function App() {
         return;
       }
 
-      if (event === 'SIGNED_IN' && session) {
+      if (event === 'SIGNED_IN') {
         setUserId(session.user.id);
+        await resolveProfileState(session.user.id);
       }
     });
 
