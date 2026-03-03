@@ -1,20 +1,53 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Lifetime 💫
 
-# Run and deploy your AI Studio app
+> *A dating app designed to be deleted — without charging you every month until you do.*
 
-This contains everything you need to run your app locally.
+## The Idea
 
-View your app in AI Studio: https://ai.studio/apps/20139752-ec23-4b8d-a93e-d60521f277e8
+Every dating app makes money by keeping you single.  
+The longer you stay, the more they charge.  
+That's a broken business model.
 
-## Run Locally
+**Lifetime flips it.**  
+Pay £5 once. Get lifetime access. We never charge you again.  
+Our only incentive is to actually help you find someone.
 
-**Prerequisites:**  Node.js
+## What's Built
 
+- Clean, minimal design inspired by Hinge
+- Email and password authentication
+- Full profile setup with photos and prompts
+- Discovery feed showing real users
+- Like profiles or specific photos and prompts
+- Mutual likes create a match
+- Real-time messaging with emojis and voice notes
+- Profile editing
+- Built for iOS and Android as a web app
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## Tech Stack
+
+- **Frontend:** React + TypeScript + Vite
+- **Styling:** Tailwind CSS
+- **Backend & Database:** Supabase (PostgreSQL)
+- **Real-time:** Supabase Realtime
+- **Storage:** Supabase Storage
+- **Deployment:** Vercel
+
+## Status
+
+🚧 **Work in progress — currently in private beta with friends.**
+
+The core product works. Still building out payments, push notifications,
+and polishing before opening to the public.
+
+## Interested?
+
+If you're interested in investing, acquiring, or collaborating on this project:
+
+📩 **ntikyeijosh06@gmail.com**
+
+Or open an issue on this repo.
+
+---
+
+*Built by one person with a clear vision. No VC money. No bloat.*
