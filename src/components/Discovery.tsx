@@ -33,7 +33,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Heart, X, Infinity, Coffee, MoreHorizontal, Sparkles, Send, Loader2 } from 'lucide-react';
+import { Heart, X, Infinity, Coffee, MoreHorizontal, Sparkles, Send, Loader2, RefreshCw } from 'lucide-react';
 import { supabase } from '../supabase';
 import { DiscoveryPreferences, InteractionContext, UserProfile, SupabaseProfile, toUserProfile } from '../types';
 import { calculateAge } from '../utils/helpers';
@@ -403,12 +403,25 @@ export default function Discovery({ onOpenPreferences, preferences, isPaused, cu
     <div className="h-full w-full relative bg-[#0a0a0a]">
       {/* Top Bar */}
       <div className="absolute top-0 left-0 right-0 p-6 flex justify-end z-20 pointer-events-none">
-        <button 
-          onClick={onOpenPreferences}
-          className="pointer-events-auto p-3 bg-[#0a0a0a]/50 backdrop-blur-md border border-[#262626] rounded-full text-[#f5f5f5] hover:bg-[#171717] transition-colors shadow-lg"
-        >
-          <MoreHorizontal size={18} />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={fetchProfiles}
+            disabled={loading}
+            className="pointer-events-auto p-3 bg-[#0a0a0a]/50 backdrop-blur-md border border-[#262626] rounded-full text-[#f5f5f5] hover:bg-[#171717] transition-colors shadow-lg disabled:opacity-60"
+            aria-label="Refresh discovery"
+            title="Refresh discovery"
+          >
+            <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
+          </button>
+          <button
+            onClick={onOpenPreferences}
+            className="pointer-events-auto p-3 bg-[#0a0a0a]/50 backdrop-blur-md border border-[#262626] rounded-full text-[#f5f5f5] hover:bg-[#171717] transition-colors shadow-lg"
+            aria-label="Open preferences"
+            title="Open preferences"
+          >
+            <MoreHorizontal size={18} />
+          </button>
+        </div>
       </div>
 
       <AnimatePresence mode="wait">
