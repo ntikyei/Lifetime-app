@@ -154,6 +154,7 @@ export default function Profile({ onOpenSettings, preferences, currentUserId, on
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [photos, setPhotos] = useState<string[]>([]);
 
   // Edit modal state
   const [editField, setEditField] = useState<{ field: string; title: string; value: string; maxLength?: number; multiline?: boolean } | null>(null);
@@ -177,6 +178,8 @@ export default function Profile({ onOpenSettings, preferences, currentUserId, on
       const raw = data as SupabaseProfile;
       setRawProfile(raw);
       setProfile(toUserProfile(raw));
+      // Keep photos in separate state for instant updates
+      setPhotos(Array.isArray(raw.photos) ? raw.photos : []);
     }
     setLoading(false);
   };
@@ -239,67 +242,92 @@ export default function Profile({ onOpenSettings, preferences, currentUserId, on
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
-    
     setUploadingPhoto(true);
-    
+    setError(null);
+
     try {
       const file = files[0];
       const fileExt = file.name.split('.').pop();
       const filePath = `${currentUserId}/${Date.now()}.${fileExt}`;
-      
-      // Upload to Supabase storage
+
       const { error: uploadError } = await supabase.storage
         .from('photos')
         .upload(filePath, file, {
           cacheControl: '3600',
           upsert: false
         });
-        
+
       if (uploadError) throw uploadError;
-      
-      // Get public URL
+
       const { data: urlData } = supabase.storage
         .from('photos')
         .getPublicUrl(filePath);
-        
+
       const newUrl = urlData.publicUrl;
-      
-      // Update photos array in profiles table
-      const updatedPhotos = [...(profile?.photos ?? []), newUrl];
-      
+
+      // IMPORTANT: fetch current photos fresh from database first
+      // to avoid overwriting with stale state
+      const { data: current } = await supabase
+        .from('profiles')
+        .select('photos')
+        .eq('id', currentUserId)
+        .single();
+
+      const existingPhotos: string[] = Array.isArray(current?.photos)
+        ? current.photos
+        : [];
+
+      const updatedPhotos = [...existingPhotos, newUrl];
+
       const { error: updateError } = await supabase
         .from('profiles')
         .update({ photos: updatedPhotos })
         .eq('id', currentUserId);
-        
+
       if (updateError) throw updateError;
-      
-      // Update local state
-      setProfile(prev => prev ? { ...prev, photos: updatedPhotos } : prev);
-      
+
+      // Update local state with full updated array
+      setPhotos(updatedPhotos);
+
     } catch (err) {
-      console.error('Photo upload error:', err);
+      console.error('Upload error:', err);
       setError('Failed to upload photo. Please try again.');
     } finally {
       setUploadingPhoto(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
   const handleRemovePhoto = async (photoUrl: string) => {
     try {
-      const updatedPhotos = (profile?.photos ?? []).filter(p => p !== photoUrl);
-      
+      // Fetch current photos fresh from database first
+      const { data: current } = await supabase
+        .from('profiles')
+        .select('photos')
+        .eq('id', currentUserId)
+        .single();
+
+      const existingPhotos: string[] = Array.isArray(current?.photos)
+        ? current.photos
+        : [];
+
+      const updatedPhotos = existingPhotos.filter(
+        (p: string) => p !== photoUrl
+      );
+
       const { error } = await supabase
         .from('profiles')
         .update({ photos: updatedPhotos })
         .eq('id', currentUserId);
-        
+
       if (error) throw error;
-      
-      setProfile(prev => prev ? { ...prev, photos: updatedPhotos } : prev);
-      
+
+      // Update local state immediately
+      setPhotos(updatedPhotos);
+
     } catch (err) {
-      console.error('Remove photo error:', err);
+      console.error('Delete error:', err);
+      setError('Failed to remove photo. Please try again.');
     }
   };
 
@@ -351,7 +379,7 @@ export default function Profile({ onOpenSettings, preferences, currentUserId, on
       <div className="flex flex-col items-center mb-8">
         <div className="w-28 h-28 rounded-full overflow-hidden mb-4 relative group">
           <img
-            src={profile.photos[0]?.url ?? 'https://picsum.photos/seed/default/400/400'}
+            src={photos[0] ?? 'https://picsum.photos/seed/default/400/400'}
             alt={profile.name}
             className="w-full h-full object-cover"
             referrerPolicy="no-referrer"
@@ -415,29 +443,48 @@ export default function Profile({ onOpenSettings, preferences, currentUserId, on
         <section>
           <h3 className="text-xs font-medium text-[#737373] uppercase tracking-widest mb-4">Photos</h3>
           <div className="grid grid-cols-3 gap-2">
-            {(Array.isArray(profile.photos) ? profile.photos : []).map((photo, i) => {
-              const url = typeof photo === 'string' ? photo : photo.url;
+            {[...Array(6)].map((_, index) => {
+              const photoUrl = photos[index];
               return (
-                <div key={url + i} className="aspect-square rounded-xl overflow-hidden relative group">
-                  <img src={url} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                  <button
-                    onClick={() => handleRemovePhoto(url)}
-                    className="absolute top-2 right-2 w-7 h-7 rounded-full bg-[#0a0a0a]/70 flex items-center justify-center text-[#f5f5f5] opacity-0 group-hover:opacity-100 transition-opacity hover:bg-[#ef4444]"
-                  >
-                    <Trash2 size={14} />
-                  </button>
+                <div key={index} className="aspect-[3/4] rounded-xl border border-[#262626] bg-[#171717] overflow-hidden relative group">
+                  {photoUrl ? (
+                    <>
+                      <img
+                        src={photoUrl}
+                        alt={`Photo ${index + 1}`}
+                        className="w-full h-full object-cover"
+                        referrerPolicy="no-referrer"
+                      />
+                      <button
+                        onClick={() => handleRemovePhoto(photoUrl)}
+                        className="absolute top-2 right-2 w-7 h-7 rounded-full bg-red-500 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <X size={14} />
+                      </button>
+                      {index === 0 && (
+                        <div className="absolute bottom-2 left-2 bg-[#0a0a0a]/70 backdrop-blur-md rounded-full px-2 py-0.5 text-[10px] font-medium text-[#f5f5f5]">
+                          Main
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      className="w-full h-full flex flex-col items-center justify-center text-[#737373] hover:text-[#a3a3a3] transition-colors"
+                    >
+                      {uploadingPhoto && index === photos.length ? (
+                        <Loader2 size={20} className="animate-spin" />
+                      ) : (
+                        <>
+                          <Camera size={20} />
+                          <span className="text-[10px] mt-1 font-light">Add</span>
+                        </>
+                      )}
+                    </button>
+                  )}
                 </div>
               );
             })}
-            {(Array.isArray(profile.photos) ? profile.photos : []).length < 6 && (
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploadingPhoto}
-                className="aspect-square rounded-xl border-2 border-dashed border-[#262626] flex items-center justify-center text-[#737373] hover:border-[#404040] hover:text-[#a3a3a3] transition-colors disabled:opacity-50"
-              >
-                {uploadingPhoto ? <Loader2 size={24} className="animate-spin" /> : <Camera size={24} />}
-              </button>
-            )}
           </div>
         </section>
 
