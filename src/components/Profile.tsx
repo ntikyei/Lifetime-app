@@ -553,7 +553,7 @@ export default function Profile({ onOpenSettings, preferences, currentUserId, on
                       </div>
                       <button
                         onClick={() => handleRemovePhoto(photoUrl)}
-                        className="absolute top-2 right-2 w-7 h-7 rounded-full bg-red-500 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                        className="absolute top-2 right-2 w-7 h-7 rounded-full bg-red-500/90 flex items-center justify-center text-white z-10 shadow-lg"
                       >
                         <X size={14} />
                       </button>
