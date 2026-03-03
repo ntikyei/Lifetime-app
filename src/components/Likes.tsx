@@ -154,9 +154,9 @@ export default function Likes({ onMatch, currentUserId }: Props) {
         <div className="w-16 h-16 rounded-full border border-[#262626] flex items-center justify-center mb-6">
           <Heart className="w-6 h-6 opacity-50" />
         </div>
-        <h2 className="text-2xl font-serif text-[#f5f5f5] mb-4">No new likes</h2>
+        <h2 className="text-2xl font-serif text-[#f5f5f5] mb-4">No likes yet</h2>
         <p className="text-[#a3a3a3] font-light leading-relaxed">
-          When someone likes your profile, they'll appear here. Quality connections take time.
+          No likes yet. Make sure your profile is complete to attract more people.
         </p>
       </div>
     );

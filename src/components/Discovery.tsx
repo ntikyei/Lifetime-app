@@ -1,3 +1,36 @@
+/*
+  Run this SQL in Supabase SQL Editor:
+
+  alter table profiles add column if not exists religion text;
+  alter table profiles add column if not exists race text;
+  alter table profiles add column if not exists ethnicity text;
+  alter table profiles add column if not exists sexuality text;
+  alter table profiles add column if not exists interested_in text[] default '{}';
+  alter table profiles add column if not exists preferences jsonb default '{}';
+  alter table profiles add column if not exists show_in_discovery boolean default true;
+
+  create table if not exists blocks_reports (
+    id uuid default gen_random_uuid() primary key,
+    reporter_id uuid references profiles(id) on delete cascade,
+    reported_id uuid references profiles(id) on delete cascade,
+    type text check (type in ('block', 'report')),
+    reason text,
+    created_at timestamp with time zone default now()
+  );
+
+  alter table blocks_reports enable row level security;
+
+  create policy "Users can insert blocks"
+  on blocks_reports for insert
+  to authenticated
+  with check (auth.uid() = reporter_id);
+
+  create policy "Users can view own blocks"
+  on blocks_reports for select
+  to authenticated
+  using (auth.uid() = reporter_id);
+*/
+
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Heart, X, Infinity, Coffee, MoreHorizontal, Sparkles, Send, Loader2 } from 'lucide-react';
@@ -14,6 +47,7 @@ interface Props {
 
 export default function Discovery({ onOpenPreferences, preferences, isPaused, currentUserId }: Props) {
   const [profiles, setProfiles] = useState<UserProfile[]>([]);
+  const [emptyReason, setEmptyReason] = useState<'none' | 'no-users' | 'preferences' | 'seen-all'>('none');
   const [currentIndex, setCurrentIndex] = useState(0);
   const [direction, setDirection] = useState(0);
   const [interactionContext, setInteractionContext] = useState<InteractionContext | null>(null);
@@ -24,59 +58,136 @@ export default function Discovery({ onOpenPreferences, preferences, isPaused, cu
   const [matchedProfile, setMatchedProfile] = useState<UserProfile | null>(null);
   const [interstitialDismissed, setInterstitialDismissed] = useState(false);
 
+  const genderMatches = (profileGender: string, interestedIn: string[]): boolean => {
+    if (!interestedIn || interestedIn.length === 0) return true;
+    if (interestedIn.includes('Everyone')) return true;
+
+    const g = profileGender?.toLowerCase() ?? '';
+
+    return interestedIn.some(pref => {
+      if (pref === 'Men') return g === 'man' || g === 'male' || g === 'men';
+      if (pref === 'Women') return g === 'woman' || g === 'female' || g === 'women';
+      if (pref === 'Non-binary') return g === 'non-binary' || g === 'nonbinary';
+      return g === pref.toLowerCase();
+    });
+  };
+
   // Fetch real profiles from Supabase
   const fetchProfiles = useCallback(async () => {
+    console.log('[Discovery] fetchProfiles start', { currentUserId, preferences });
     setLoading(true);
     setFetchError(null);
+    setEmptyReason('none');
 
     try {
-      // Get IDs the current user has already interacted with
-      const { data: interactions } = await supabase
+      // Step 1: Get all profiles except current user
+      const { data: allProfiles, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .neq('id', currentUserId);
+
+      if (error) throw error;
+
+      console.log('[Discovery] Total profiles found:', allProfiles?.length ?? 0);
+
+      // Step 2: Get profiles already seen (liked or passed)
+      const { data: seen, error: seenError } = await supabase
         .from('interactions')
         .select('target_id')
         .eq('actor_id', currentUserId);
 
-      const excludedIds = (interactions ?? []).map((i) => i.target_id as string);
-      excludedIds.push(currentUserId);
-
-      let query = supabase
-        .from('profiles')
-        .select('*')
-        .not('id', 'in', `(${excludedIds.join(',')})`)
-        .limit(20);
-
-      const { data, error } = await query;
-
-      if (error) {
-        throw new Error(error.message);
+      if (seenError) {
+        console.log('[Discovery] Seen query failed, continuing without seen filter', seenError);
       }
 
-      const userProfiles = (data as SupabaseProfile[]).map(toUserProfile);
+      const seenIds = seen?.map((s: { target_id: string }) => s.target_id) ?? [];
+      console.log('[Discovery] seenIds:', seenIds);
 
-      // Apply preference filters
-      const filtered = userProfiles.filter((p) => {
-        // Filter by age range
-        if (p.age < preferences.ageRange[0] || p.age > preferences.ageRange[1]) {
-          return false;
-        }
-        // Filter by gender (if genders array is not empty)
-        if (preferences.genders.length > 0) {
-          // Match against the raw profile gender field
-          const rawMatch = (data as SupabaseProfile[]).find(r => r.id === p.id);
-          if (rawMatch && rawMatch.gender && !preferences.genders.some(g => g.toLowerCase() === rawMatch.gender.toLowerCase())) {
-            return false;
-          }
-        }
-        return true;
+      // Step 3: Get blocked users
+      const { data: blocked, error: blockedError } = await supabase
+        .from('blocks_reports')
+        .select('reported_id')
+        .eq('reporter_id', currentUserId);
+
+      if (blockedError) {
+        console.log('[Discovery] blocks_reports query failed, continuing without block filter', blockedError);
+      }
+
+      const blockedIds = blocked?.map((b: { reported_id: string }) => b.reported_id) ?? [];
+      console.log('[Discovery] blockedIds:', blockedIds);
+
+      // Step 4: Filter out seen, blocked, and hidden profiles
+      const baseFiltered = (allProfiles ?? []).filter((p: SupabaseProfile) => {
+        const visible = p.show_in_discovery !== false;
+        return (
+          !seenIds.includes(p.id) &&
+          !blockedIds.includes(p.id) &&
+          !!p.display_name &&
+          visible
+        );
       });
 
-      console.log(`[Discovery] ${userProfiles.length} profiles fetched, ${filtered.length} match preferences`);
-      setProfiles(filtered);
+      console.log('[Discovery] After seen/blocked/name/show_in_discovery filter:', baseFiltered.length);
+
+      // Step 5: Apply gender preference filter
+      let filtered = baseFiltered;
+      if (preferences?.genders && preferences.genders.length > 0) {
+        filtered = filtered.filter((p: SupabaseProfile) =>
+          genderMatches(p.gender ?? '', preferences.genders)
+        );
+        console.log('[Discovery] After gender filter:', filtered.length);
+      }
+
+      // Step 6: Apply age filter if set
+      if (preferences?.ageRange) {
+        filtered = filtered.filter((p: SupabaseProfile) => {
+          if (!p.dob) return true;
+          const age = calculateAge(p.dob);
+          return age >= preferences.ageRange[0] && age <= preferences.ageRange[1];
+        });
+        console.log('[Discovery] After age filter:', filtered.length);
+      }
+
+      // Optional religion filter from preferences panel
+      if (preferences.religion.length > 0) {
+        const wanted = preferences.religion.map((value) => value.toLowerCase());
+        filtered = filtered.filter((p: SupabaseProfile) => {
+          const value = p.religion?.toLowerCase() ?? '';
+          return value.length > 0 && wanted.includes(value);
+        });
+        console.log('[Discovery] After religion filter:', filtered.length);
+      }
+
+      // Optional race filter from preferences panel
+      if (preferences.race.length > 0) {
+        const wanted = preferences.race.map((value) => value.toLowerCase());
+        filtered = filtered.filter((p: SupabaseProfile) => {
+          const value = p.race?.toLowerCase() ?? '';
+          return value.length > 0 && wanted.includes(value);
+        });
+        console.log('[Discovery] After race filter:', filtered.length);
+      }
+
+      console.log('[Discovery] After filtering:', filtered.length);
+
+      if ((allProfiles ?? []).length === 0) {
+        setEmptyReason('no-users');
+      } else if (baseFiltered.length === 0) {
+        setEmptyReason('seen-all');
+      } else if (filtered.length === 0) {
+        setEmptyReason('preferences');
+      } else {
+        setEmptyReason('none');
+      }
+
+      setProfiles(filtered.map(toUserProfile));
+      setCurrentIndex(0);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to load profiles.';
-      setFetchError(message);
+      console.error('Discovery fetch error:', err);
+      setFetchError('Failed to load profiles. Pull down to refresh.');
     } finally {
       setLoading(false);
+      console.log('[Discovery] fetchProfiles complete');
     }
   }, [currentUserId, preferences]);
 
@@ -239,6 +350,7 @@ export default function Discovery({ onOpenPreferences, preferences, isPaused, cu
 
   // Honest Empty State
   if (!currentProfile) {
+    const resolvedEmptyReason = profiles.length > 0 && currentIndex >= profiles.length ? 'seen-all' : emptyReason;
     return (
       <div className="flex flex-col items-center justify-center h-full text-[#a3a3a3] font-light p-8 text-center max-w-md mx-auto relative">
         <button 
@@ -250,16 +362,36 @@ export default function Discovery({ onOpenPreferences, preferences, isPaused, cu
         <div className="w-16 h-16 rounded-full border border-[#262626] flex items-center justify-center mb-6">
           <Infinity className="w-6 h-6 opacity-50" />
         </div>
-        <h2 className="text-2xl font-serif text-[#f5f5f5] mb-4">You're all caught up.</h2>
-        <p className="leading-relaxed mb-6">
-          No profiles match your current preferences right now. Try adjusting your filters or check back later.
-        </p>
-        <button 
-          onClick={onOpenPreferences}
-          className="bg-[#f5f5f5] text-[#0a0a0a] font-medium rounded-full py-3 px-6 hover:bg-[#e5e5e5] transition-colors mb-4"
-        >
-          Adjust preferences
-        </button>
+        {resolvedEmptyReason === 'no-users' && (
+          <>
+            <h2 className="text-2xl font-serif text-[#f5f5f5] mb-4">You're one of the first here.</h2>
+            <p className="leading-relaxed mb-6">
+              Share the app with friends to see more people.
+            </p>
+          </>
+        )}
+        {resolvedEmptyReason === 'preferences' && (
+          <>
+            <h2 className="text-2xl font-serif text-[#f5f5f5] mb-4">You're all caught up.</h2>
+            <p className="leading-relaxed mb-6 whitespace-pre-line">
+              {"No profiles match your preferences right now.\nTry widening your filters or check back later."}
+            </p>
+            <button
+              onClick={onOpenPreferences}
+              className="bg-[#f5f5f5] text-[#0a0a0a] font-medium rounded-full py-3 px-6 hover:bg-[#e5e5e5] transition-colors mb-4"
+            >
+              Adjust Preferences
+            </button>
+          </>
+        )}
+        {resolvedEmptyReason === 'seen-all' && (
+          <>
+            <h2 className="text-2xl font-serif text-[#f5f5f5] mb-4">You're all caught up.</h2>
+            <p className="leading-relaxed mb-6">
+              You've seen everyone nearby. Check back soon as new people join daily.
+            </p>
+          </>
+        )}
         <div className="bg-[#171717] border border-[#262626] rounded-xl p-4 text-sm text-[#737373]">
           We don't show you inactive profiles or fake accounts just to keep you swiping. Go enjoy your day.
         </div>

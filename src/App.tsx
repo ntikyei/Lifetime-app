@@ -34,9 +34,9 @@ const DEFAULT_SETTINGS: AppSettings = {
 };
 
 const DEFAULT_PREFERENCES: DiscoveryPreferences = {
-  ageRange: [24, 32],
-  genders: ['Women'],
-  maxDistance: 10,
+  ageRange: [18, 65],
+  genders: ['Everyone'],
+  maxDistance: 50,
   race: [],
   religion: [],
   ethnicity: [],

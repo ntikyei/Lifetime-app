@@ -132,9 +132,9 @@ export default function Matches({ onSelectMatch, currentUserId }: Props) {
         <div className="w-16 h-16 rounded-full border border-[#262626] flex items-center justify-center mb-6">
           <MessageCircleHeart className="w-6 h-6 text-[#737373]" />
         </div>
-        <h2 className="text-2xl font-serif text-[#f5f5f5] mb-4">It's quiet right now.</h2>
+        <h2 className="text-2xl font-serif text-[#f5f5f5] mb-4">No matches yet</h2>
         <p className="text-[#a3a3a3] font-light leading-relaxed max-w-sm">
-          That's completely normal. We'll let you know the moment someone connects with you.
+          No matches yet. Keep liking people and you'll connect soon! 💫
         </p>
       </div>
     );

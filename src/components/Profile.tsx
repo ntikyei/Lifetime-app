@@ -4,6 +4,17 @@
 // to authenticated
 // with check (bucket_id = 'photos');
 
+/*
+  Run this SQL in Supabase SQL Editor:
+
+  alter table profiles add column if not exists religion text;
+  alter table profiles add column if not exists race text;
+  alter table profiles add column if not exists ethnicity text;
+  alter table profiles add column if not exists sexuality text;
+  alter table profiles add column if not exists interested_in text[] default '{}';
+  alter table profiles add column if not exists preferences jsonb default '{}';
+*/
+
 import { useState, useEffect, useRef } from 'react';
 import { Settings, Shield, LogOut, RefreshCcw, PenLine, Loader2, X, Camera, Check, Trash2 } from 'lucide-react';
 import { DiscoveryPreferences, SupabaseProfile, toUserProfile, UserProfile } from '../types';
@@ -25,9 +36,10 @@ interface EditModalProps {
   onClose: () => void;
   multiline?: boolean;
   inputType?: string;
+  suggestions?: string[];
 }
 
-function EditModal({ title, value, maxLength, onSave, onClose, multiline, inputType }: EditModalProps) {
+function EditModal({ title, value, maxLength, onSave, onClose, multiline, inputType, suggestions }: EditModalProps) {
   const [text, setText] = useState(value);
 
   return (
@@ -60,6 +72,19 @@ function EditModal({ title, value, maxLength, onSave, onClose, multiline, inputT
         )}
         {maxLength && (
           <p className="text-[10px] text-[#737373] mt-2 text-right">{text.length}/{maxLength}</p>
+        )}
+        {suggestions && suggestions.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {suggestions.map((option) => (
+              <button
+                key={option}
+                onClick={() => setText(option)}
+                className="px-3 py-1.5 rounded-full text-xs bg-[#0a0a0a] border border-[#262626] text-[#a3a3a3] hover:text-[#f5f5f5] hover:border-[#404040] transition-colors"
+              >
+                {option}
+              </button>
+            ))}
+          </div>
         )}
         <button
           onClick={() => onSave(text)}
@@ -139,6 +164,45 @@ function PromptEditModal({ question, answer, onSave, onClose }: PromptEditModalP
   );
 }
 
+interface SelectSheetProps {
+  title: string;
+  options: string[];
+  value: string;
+  onSelect: (value: string) => void;
+  onClose: () => void;
+}
+
+function SelectSheet({ title, options, value, onSelect, onClose }: SelectSheetProps) {
+  return (
+    <div className="fixed inset-0 z-50 bg-[#0a0a0a]/90 backdrop-blur-sm flex items-end" onClick={onClose}>
+      <div className="w-full bg-[#171717] border-t border-[#262626] rounded-t-3xl p-6 max-h-[70vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-[#f5f5f5] font-medium">{title}</h3>
+          <button onClick={onClose} className="text-[#737373] hover:text-[#f5f5f5]"><X size={20} /></button>
+        </div>
+        <div className="space-y-2">
+          {options.map((option) => {
+            const isSelected = value === option;
+            return (
+              <button
+                key={option}
+                onClick={() => onSelect(option)}
+                className={`w-full text-left px-4 py-3 rounded-xl border transition-colors ${
+                  isSelected
+                    ? 'bg-[#f5f5f5] text-[#0a0a0a] border-[#f5f5f5]'
+                    : 'bg-[#0a0a0a] text-[#d4d4d4] border-[#262626] hover:border-[#404040]'
+                }`}
+              >
+                {option}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface CompletionCheck {
   done: boolean;
   weight: number;
@@ -167,6 +231,12 @@ function calculateCompletion(raw: SupabaseProfile | null): number {
   return checks.reduce((sum, c) => sum + (c.done ? c.weight : 0), 0);
 }
 
+const GENDER_SUGGESTIONS = ['Man', 'Woman', 'Non-binary', 'Other'];
+const SEXUALITY_OPTIONS = ['Straight', 'Gay', 'Lesbian', 'Bisexual', 'Pansexual', 'Queer', 'Asexual', 'Other', 'Prefer not to say'];
+const INTERESTED_IN_OPTIONS = ['Men', 'Women', 'Everyone', 'Non-binary'];
+const RELIGION_OPTIONS = ['No religion', 'Christian', 'Muslim', 'Jewish', 'Hindu', 'Buddhist', 'Sikh', 'Spiritual', 'Other', 'Prefer not to say'];
+const RACE_OPTIONS = ['Black', 'White', 'Asian', 'Hispanic/Latino', 'Middle Eastern', 'Mixed', 'Other', 'Prefer not to say'];
+
 export default function Profile({ onOpenSettings, preferences, currentUserId, onLogout }: Props) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [rawProfile, setRawProfile] = useState<SupabaseProfile | null>(null);
@@ -177,6 +247,7 @@ export default function Profile({ onOpenSettings, preferences, currentUserId, on
   const [photos, setPhotos] = useState<string[]>([]);
   const [showSavedToast, setShowSavedToast] = useState(false);
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [selectSheet, setSelectSheet] = useState<null | 'religion' | 'race' | 'sexuality'>(null);
 
   // Edit modal state
   const [editField, setEditField] = useState<{ field: string; title: string; value: string; maxLength?: number; multiline?: boolean; inputType?: string } | null>(null);
@@ -230,7 +301,8 @@ export default function Profile({ onOpenSettings, preferences, currentUserId, on
     fetchProfile();
   }, [currentUserId]);
 
-  const updateField = async (field: string, value: string) => {
+  const updateField = async (field: string, value: string | string[] | null) => {
+    console.log('[Profile] updateField', { field, value });
     setSaving(true);
     const { error: err } = await supabase
       .from('profiles')
@@ -259,9 +331,32 @@ export default function Profile({ onOpenSettings, preferences, currentUserId, on
       bio: 'bio',
       gender: 'gender',
       dob: 'dob',
+      ethnicity: 'ethnicity',
     };
     const dbField = fieldMap[editField.field] ?? editField.field;
     updateField(dbField, val);
+  };
+
+  const handleSelectSave = async (field: 'religion' | 'race' | 'sexuality', value: string) => {
+    await updateField(field, value);
+    setSelectSheet(null);
+  };
+
+  const handleInterestedInToggle = async (option: string) => {
+    const current = Array.isArray(rawProfile?.interested_in) ? rawProfile.interested_in : [];
+    let next: string[];
+
+    if (option === 'Everyone') {
+      next = current.includes('Everyone') ? [] : ['Everyone'];
+    } else {
+      const withoutEveryone = current.filter((item) => item !== 'Everyone');
+      next = withoutEveryone.includes(option)
+        ? withoutEveryone.filter((item) => item !== option)
+        : [...withoutEveryone, option];
+    }
+
+    console.log('[Profile] interested_in changed', next);
+    await updateField('interested_in', next);
   };
 
   const handlePromptSave = async (question: string, answer: string, index?: number) => {
@@ -659,6 +754,118 @@ export default function Profile({ onOpenSettings, preferences, currentUserId, on
           )}
         </section>
 
+        {/* Personal Details */}
+        <section>
+          <h3 className="text-xs font-medium text-[#737373] uppercase tracking-widest mb-4">Personal Details</h3>
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <span className="text-[#d4d4d4] font-light">First name</span>
+              <div className="flex items-center gap-2">
+                <span className="text-[#a3a3a3] text-sm font-light">{rawProfile?.display_name || 'Not set'}</span>
+                <button
+                  onClick={() => setEditField({ field: 'name', title: 'Edit First Name', value: rawProfile?.display_name ?? '', maxLength: 50 })}
+                  className="text-[#737373] hover:text-[#f5f5f5] transition-colors"
+                >
+                  <PenLine size={12} />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex justify-between items-center">
+              <span className="text-[#d4d4d4] font-light">Date of birth</span>
+              <div className="flex items-center gap-2">
+                <span className="text-[#a3a3a3] text-sm font-light">{rawProfile?.dob || 'Not set'}</span>
+                <button
+                  onClick={() => setEditField({ field: 'dob', title: 'Edit Date of Birth', value: rawProfile?.dob ?? '', inputType: 'date' })}
+                  className="text-[#737373] hover:text-[#f5f5f5] transition-colors"
+                >
+                  <PenLine size={12} />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex justify-between items-center">
+              <span className="text-[#d4d4d4] font-light">Gender</span>
+              <div className="flex items-center gap-2">
+                <span className="text-[#a3a3a3] text-sm font-light">{rawProfile?.gender || 'Not set'}</span>
+                <button
+                  onClick={() => setEditField({ field: 'gender', title: 'Edit Gender', value: rawProfile?.gender ?? '', maxLength: 30 })}
+                  className="text-[#737373] hover:text-[#f5f5f5] transition-colors"
+                >
+                  <PenLine size={12} />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex justify-between items-center">
+              <span className="text-[#d4d4d4] font-light">Sexuality</span>
+              <div className="flex items-center gap-2">
+                <span className="text-[#a3a3a3] text-sm font-light">{rawProfile?.sexuality || 'Not set'}</span>
+                <button
+                  onClick={() => setSelectSheet('sexuality')}
+                  className="text-[#737373] hover:text-[#f5f5f5] transition-colors"
+                >
+                  <PenLine size={12} />
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-3 border-t border-[#171717] pt-4">
+              <div className="flex justify-between items-center">
+                <span className="text-[#d4d4d4] font-light">Interested in</span>
+                <span className="text-[#a3a3a3] text-sm font-light">
+                  {Array.isArray(rawProfile?.interested_in) && rawProfile.interested_in.length > 0
+                    ? rawProfile.interested_in.join(', ')
+                    : 'Not set'}
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {INTERESTED_IN_OPTIONS.map((option) => {
+                  const selected = (rawProfile?.interested_in ?? []).includes(option);
+                  return (
+                    <button
+                      key={option}
+                      onClick={() => handleInterestedInToggle(option)}
+                      className={`px-3 py-1.5 rounded-full text-xs border transition-colors ${selected ? 'bg-[#f5f5f5] text-[#0a0a0a] border-[#f5f5f5]' : 'bg-[#171717] text-[#a3a3a3] border-[#262626] hover:border-[#404040]'}`}
+                    >
+                      {option}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="flex justify-between items-center">
+              <span className="text-[#d4d4d4] font-light">Religion</span>
+              <div className="flex items-center gap-2">
+                <span className="text-[#a3a3a3] text-sm font-light">{rawProfile?.religion || 'Not set'}</span>
+                <button onClick={() => setSelectSheet('religion')} className="text-[#737373] hover:text-[#f5f5f5] transition-colors"><PenLine size={12} /></button>
+              </div>
+            </div>
+
+            <div className="flex justify-between items-center">
+              <span className="text-[#d4d4d4] font-light">Race</span>
+              <div className="flex items-center gap-2">
+                <span className="text-[#a3a3a3] text-sm font-light">{rawProfile?.race || 'Not set'}</span>
+                <button onClick={() => setSelectSheet('race')} className="text-[#737373] hover:text-[#f5f5f5] transition-colors"><PenLine size={12} /></button>
+              </div>
+            </div>
+
+            <div className="flex justify-between items-center">
+              <span className="text-[#d4d4d4] font-light">Ethnicity</span>
+              <div className="flex items-center gap-2">
+                <span className="text-[#a3a3a3] text-sm font-light">{rawProfile?.ethnicity || 'Not set'}</span>
+                <button
+                  onClick={() => setEditField({ field: 'ethnicity', title: 'Edit Ethnicity', value: rawProfile?.ethnicity ?? '', maxLength: 100 })}
+                  className="text-[#737373] hover:text-[#f5f5f5] transition-colors"
+                >
+                  <PenLine size={12} />
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
         {/* Account Info */}
         <section>
           <h3 className="text-xs font-medium text-[#737373] uppercase tracking-widest mb-4">Account</h3>
@@ -728,6 +935,7 @@ export default function Profile({ onOpenSettings, preferences, currentUserId, on
           maxLength={editField.maxLength}
           multiline={editField.multiline}
           inputType={editField.inputType}
+          suggestions={editField.field === 'gender' ? GENDER_SUGGESTIONS : undefined}
           onClose={() => setEditField(null)}
           onSave={handleFieldSave}
         />
@@ -750,6 +958,36 @@ export default function Profile({ onOpenSettings, preferences, currentUserId, on
           answer=""
           onClose={() => setShowAddPrompt(false)}
           onSave={(q, a) => handlePromptSave(q, a)}
+        />
+      )}
+
+      {selectSheet === 'sexuality' && (
+        <SelectSheet
+          title="Select Sexuality"
+          options={SEXUALITY_OPTIONS}
+          value={rawProfile?.sexuality ?? ''}
+          onClose={() => setSelectSheet(null)}
+          onSelect={(value) => handleSelectSave('sexuality', value)}
+        />
+      )}
+
+      {selectSheet === 'religion' && (
+        <SelectSheet
+          title="Select Religion"
+          options={RELIGION_OPTIONS}
+          value={rawProfile?.religion ?? ''}
+          onClose={() => setSelectSheet(null)}
+          onSelect={(value) => handleSelectSave('religion', value)}
+        />
+      )}
+
+      {selectSheet === 'race' && (
+        <SelectSheet
+          title="Select Race"
+          options={RACE_OPTIONS}
+          value={rawProfile?.race ?? ''}
+          onClose={() => setSelectSheet(null)}
+          onSelect={(value) => handleSelectSave('race', value)}
         />
       )}
     </div>

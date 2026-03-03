@@ -32,9 +32,23 @@ export type SupabaseProfile = {
   display_name: string;
   dob: string;
   gender: string;
+  sexuality?: string | null;
+  interested_in?: string[] | null;
+  religion?: string | null;
+  race?: string | null;
+  ethnicity?: string | null;
   bio: string | null;
   location_city: string | null;
   job_title: string | null;
+  age_min?: number | null;
+  age_max?: number | null;
+  max_distance?: number | null;
+  show_in_discovery?: boolean | null;
+  preferences?: {
+    religion?: string[];
+    race?: string[];
+    ethnicity?: string[];
+  } | null;
   photos: string[];
   prompts: { question: string; answer: string }[];
   is_paid: boolean;
