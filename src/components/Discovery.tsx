@@ -289,12 +289,20 @@ export default function Discovery({ onOpenPreferences, preferences, isPaused, cu
           className="absolute inset-0 overflow-y-auto pb-32"
         >
           {/* Main Photo */}
-          <div className="relative w-full aspect-[4/5] group">
+          <div className="relative w-full aspect-[4/5] group bg-[#171717]">
+            {/* Initials fallback */}
+            <div className="absolute inset-0 flex items-center justify-center">
+              <span className="text-5xl font-serif text-[#262626]">{currentProfile.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}</span>
+            </div>
             <img
               src={currentProfile.photos[0]?.url ?? ''}
               alt={currentProfile.name}
-              className="w-full h-full object-cover"
+              className="w-full h-full object-cover relative z-[1]"
               referrerPolicy="no-referrer"
+              onError={(e) => {
+                const target = e.target as HTMLImageElement;
+                target.style.display = 'none';
+              }}
             />
             <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a0a] via-[#0a0a0a]/20 to-transparent opacity-90" />
             
@@ -382,12 +390,19 @@ export default function Discovery({ onOpenPreferences, preferences, isPaused, cu
 
             {/* Photo 2 */}
             {currentProfile.photos[1] && (
-              <div className="w-full aspect-square overflow-hidden rounded-2xl relative group">
+              <div className="w-full aspect-square overflow-hidden rounded-2xl relative group bg-[#171717]">
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="text-4xl font-serif text-[#262626]">{currentProfile.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}</span>
+                </div>
                 <img
                   src={currentProfile.photos[1].url}
                   alt="Profile 2"
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-cover relative z-[1]"
                   referrerPolicy="no-referrer"
+                  onError={(e) => {
+                    const target = e.target as HTMLImageElement;
+                    target.style.display = 'none';
+                  }}
                 />
                 {currentProfile.photos[1].caption && (
                   <div className="absolute bottom-0 left-0 w-full p-4 bg-gradient-to-t from-[#0a0a0a]/80 to-transparent">
@@ -423,12 +438,19 @@ export default function Discovery({ onOpenPreferences, preferences, isPaused, cu
             
             {/* Photo 3 */}
             {currentProfile.photos[2] && (
-              <div className="w-full aspect-square overflow-hidden rounded-2xl relative group">
+              <div className="w-full aspect-square overflow-hidden rounded-2xl relative group bg-[#171717]">
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="text-4xl font-serif text-[#262626]">{currentProfile.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}</span>
+                </div>
                 <img
                   src={currentProfile.photos[2].url}
                   alt="Profile 3"
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-cover relative z-[1]"
                   referrerPolicy="no-referrer"
+                  onError={(e) => {
+                    const target = e.target as HTMLImageElement;
+                    target.style.display = 'none';
+                  }}
                 />
                 {currentProfile.photos[2].caption && (
                   <div className="absolute bottom-0 left-0 w-full p-4 bg-gradient-to-t from-[#0a0a0a]/80 to-transparent">
@@ -560,12 +582,19 @@ export default function Discovery({ onOpenPreferences, preferences, isPaused, cu
               </p>
 
               {matchedProfile.photos[0] && (
-                <div className="w-24 h-24 rounded-full overflow-hidden mx-auto mb-8 border-2 border-[#f5f5f5]">
+                <div className="w-24 h-24 rounded-full overflow-hidden mx-auto mb-8 border-2 border-[#f5f5f5] bg-[#171717]">
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span className="text-2xl font-serif text-[#262626]">{matchedProfile.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}</span>
+                  </div>
                   <img
                     src={matchedProfile.photos[0].url}
                     alt={matchedProfile.name}
-                    className="w-full h-full object-cover"
+                    className="w-full h-full object-cover relative z-[1]"
                     referrerPolicy="no-referrer"
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      target.style.display = 'none';
+                    }}
                   />
                 </div>
               )}

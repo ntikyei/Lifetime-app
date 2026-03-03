@@ -14,4 +14,12 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Broken photo placeholder: hidden until parent gets .broken-photo */
+.broken-photo-placeholder {
+  display: none;
+}
+.broken-photo .broken-photo-placeholder {
+  display: flex;
+}
+
 

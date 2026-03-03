@@ -184,6 +184,16 @@ export default function Profile({ onOpenSettings, preferences, currentUserId, on
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const cleanPhotos = (photos: unknown): string[] => {
+    if (!Array.isArray(photos)) return [];
+    return photos.filter(
+      (url): url is string =>
+        typeof url === 'string' &&
+        url.startsWith('https://') &&
+        url.length > 20
+    );
+  };
+
   const fetchProfile = async () => {
     setLoading(true);
     setError(null);
@@ -199,8 +209,18 @@ export default function Profile({ onOpenSettings, preferences, currentUserId, on
       const raw = data as SupabaseProfile;
       setRawProfile(raw);
       setProfile(toUserProfile(raw));
-      // Keep photos in separate state for instant updates
-      setPhotos(Array.isArray(raw.photos) ? raw.photos : []);
+
+      // Clean broken / malformed URLs
+      const cleanedPhotos = cleanPhotos(raw.photos);
+      setPhotos(cleanedPhotos);
+
+      // Auto-fix DB if broken URLs were removed
+      if (cleanedPhotos.length !== (Array.isArray(raw.photos) ? raw.photos.length : 0)) {
+        await supabase
+          .from('profiles')
+          .update({ photos: cleanedPhotos })
+          .eq('id', currentUserId);
+      }
     }
     setLoading(false);
   };
@@ -290,6 +310,10 @@ export default function Profile({ onOpenSettings, preferences, currentUserId, on
         .getPublicUrl(filePath);
 
       const newUrl = urlData.publicUrl;
+
+      if (!newUrl || !newUrl.startsWith('https://')) {
+        throw new Error('Invalid photo URL returned from storage');
+      }
 
       // IMPORTANT: fetch current photos fresh from database first
       // to avoid overwriting with stale state
@@ -412,12 +436,16 @@ export default function Profile({ onOpenSettings, preferences, currentUserId, on
 
       {/* Avatar + Name */}
       <div className="flex flex-col items-center mb-8">
-        <div className="w-28 h-28 rounded-full overflow-hidden mb-4 relative group">
+        <div className="w-28 h-28 rounded-full overflow-hidden mb-4 relative group bg-[#171717]">
           <img
             src={photos[0] ?? 'https://picsum.photos/seed/default/400/400'}
             alt={profile.name}
             className="w-full h-full object-cover"
             referrerPolicy="no-referrer"
+            onError={(e) => {
+              const target = e.target as HTMLImageElement;
+              target.style.display = 'none';
+            }}
           />
           <button
             onClick={() => fileInputRef.current?.click()}
@@ -512,10 +540,20 @@ export default function Profile({ onOpenSettings, preferences, currentUserId, on
                         alt={`Photo ${index + 1}`}
                         className="w-full h-full object-cover"
                         referrerPolicy="no-referrer"
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement;
+                          target.style.display = 'none';
+                          target.parentElement?.classList.add('broken-photo');
+                        }}
                       />
+                      {/* Broken photo fallback (shown via CSS when image fails) */}
+                      <div className="broken-photo-placeholder absolute inset-0 flex flex-col items-center justify-center text-[#737373] pointer-events-none">
+                        <Camera size={20} />
+                        <span className="text-[10px] mt-1 font-light">Tap to replace</span>
+                      </div>
                       <button
                         onClick={() => handleRemovePhoto(photoUrl)}
-                        className="absolute top-2 right-2 w-7 h-7 rounded-full bg-red-500 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                        className="absolute top-2 right-2 w-7 h-7 rounded-full bg-red-500 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity z-10"
                       >
                         <X size={14} />
                       </button>
